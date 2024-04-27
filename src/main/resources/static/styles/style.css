@@ -1,0 +1,35 @@
+svg {
+    width: 1500px;
+    height: 650px;
+    border: 2px black solid;
+}
+
+.btn_panel {
+    display: flex;
+    height: 60px;
+    border: 2px black solid;
+    justify-content: center;
+    align-items: center;
+    margin-bottom: 5px;
+}
+
+.btn, .selected_btn, .btn_reset{
+    border-radius: 15px;
+    padding: 10px;
+    margin: 5px;
+    color: aliceblue;
+    height: 20px;
+    cursor: pointer;
+}
+
+.btn {
+    background-color: grey;
+}
+
+.selected_btn {
+    background-color: black;
+}
+
+.btn_reset {
+    background-color: black;
+}

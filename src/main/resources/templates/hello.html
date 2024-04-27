@@ -1,0 +1,339 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="utf-8" />
+    <title>My best paint</title>
+    <link href="styles/style.css" rel="stylesheet" type="text/css">
+</head>
+<body>
+    <div class="btn_panel">
+        <div id="circle" class="btn">Круг</div>
+        <div id="square" class="btn">Квадрат</div>
+        <div id="rectangle" class="btn">Прямоугольник</div>
+        <div id="ellipse" class="selected_btn">Овал</div>
+        <div id="line" class="btn">Линия</div>
+        <div id="polyline" class="btn">Ломаная</div>
+        <div id="reset" class="btn_reset">Очистить полотно</div>
+    </div>
+    <svg id="svg" th:utext="${shape_list}"></svg>
+</body>
+
+<script>
+    const svg = document.querySelector('#svg');
+    let drawingMode = 'ellipse';
+    let shapeElement;
+    let points = [];
+    let polyline = null;
+
+    const sendSvgToServer = async (svgData) => {
+        try {
+            const response = await fetch('/add', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ svg: new XMLSerializer().serializeToString(svgData) }),
+            });
+
+            if (response.ok) {
+                const result = await response.json();
+                console.log('Server response:', result);
+                document.cookie = "curr_shape" + "=" + document.getElementsByClassName('selected_btn')[0].getAttribute('id');
+            } else {
+                console.error('Error sending SVG data to server:', response.status);
+            }
+        } catch (error) {
+            console.error('An error occurred:', error);
+        }
+        window.location = window.location.href;
+    };
+
+    const resetRequest = async () => {
+        try {
+            const response = await fetch('/reset', {
+                method: 'POST'
+            });
+
+            if (response.ok) {
+                const result = await response.json();
+                console.log('Server response:', result);
+            } else {
+                console.error('Error sending reset request to server:', response.status);
+            }
+        } catch (error) {
+            console.error('An error occurred:', error);
+        }
+        window.location = window.location.href;
+    };
+
+    const svgPoint = (elem, x, y) => {
+        let p = svg.createSVGPoint();
+        p.x = x;
+        p.y = y;
+        return p.matrixTransform(elem.getScreenCTM().inverse());
+    }
+
+    const drawRectangle = (shape, start, end) => {
+        shape.setAttributeNS(null, 'x', Math.min(start.x, end.x));
+        shape.setAttributeNS(null, 'y', Math.min(start.y, end.y));
+        shape.setAttributeNS(null, 'width', Math.abs(start.x - end.x));
+        shape.setAttributeNS(null, 'height', Math.abs(start.y - end.y));
+    }
+
+    const createSquare = (start, end) => {
+        let shape = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+        drawSquare(shape, start, end);
+        return shape;
+    }
+
+    const drawSquare = (shape, start, end) => {
+        x = Math.min(start.x, end.x);
+        y = Math.min(start.y, end.y);
+        if (Math.min(start.x, end.x) === start.x && Math.min(start.y, end.y) === start.y) {
+            w = Math.abs(start.x - end.x);
+            h = Math.abs(start.x - end.x);
+        } else if (Math.min(start.x, end.x) === start.x) {
+            w = Math.abs(start.y - end.y);
+            h = Math.abs(start.y - end.y);
+        } else if (Math.min(start.y, end.y) === start.y) {
+            w = Math.abs(start.x - end.x);
+            h = Math.abs(start.x - end.x);
+        } else {
+            x = start.x - Math.abs(start.x - end.x);
+            y = start.y - Math.abs(start.x - end.x);
+            w = Math.abs(start.x - end.x);
+            h = Math.abs(start.x - end.x);
+        }
+        shape.setAttributeNS(null, 'x', x);
+        shape.setAttributeNS(null, 'y', y);
+        shape.setAttributeNS(null, 'width', w);
+        shape.setAttributeNS(null, 'height', h);
+    }
+
+    const createRectangle = (start, end) => {
+        let shape = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+        drawRectangle(shape, start, end);
+        return shape;
+    }
+
+    const drawCircle = (shape, start, end) => {
+        let radius = Math.sqrt(Math.pow(end.x - start.x, 2) + Math.pow(end.y - start.y, 2));
+        shape.setAttributeNS(null, 'cx', start.x);
+        shape.setAttributeNS(null, 'cy', start.y);
+        shape.setAttributeNS(null, 'r', radius);
+    }
+
+    const createCircle = (start, end) => {
+        let shape = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+        drawCircle(shape, start, end);
+        return shape;
+    }
+
+    const drawEllipse = (shape, start, end) => {
+        shape.setAttributeNS(null, 'cx', (start.x + end.x) / 2);
+        shape.setAttributeNS(null, 'cy', (start.y + end.y) / 2);
+        shape.setAttributeNS(null, 'rx', Math.abs(end.x - start.x) / 2);
+        shape.setAttributeNS(null, 'ry', Math.abs(end.y - start.y) / 2);
+    }
+
+    const createEllipse = (start, end) => {
+        let shape = document.createElementNS('http://www.w3.org/2000/svg', 'ellipse');
+        drawEllipse(shape, start, end);
+        return shape;
+    }
+
+    const drawLine = (shape, start, end) => {
+        shape.setAttributeNS(null, 'x1', start.x);
+        shape.setAttributeNS(null, 'y1', start.y);
+        shape.setAttributeNS(null, 'x2', end.x);
+        shape.setAttributeNS(null, 'y2', end.y);
+        shape.setAttributeNS(null, 'stroke', "black");
+    }
+
+    const createLine = (start, end) => {
+        let shape = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+        drawLine(shape, start, end);
+        return shape;
+    }
+
+    const createPolyline = (start, end) => {
+        if (polyline != null) {
+            points.push(...[end.x, end.y])
+            drawPolyline(polyline);
+            return null;
+        }
+
+        let shape = document.createElementNS('http://www.w3.org/2000/svg', 'polyline');
+        shape.setAttributeNS(null, 'fill', 'none');
+        shape.setAttributeNS(null, 'stroke', 'black');
+        shape.setAttributeNS(null, 'stroke-width', '2');
+        drawPolyline(shape);
+        points.push(...[start.x, start.y])
+        polyline = shape;
+        return shape;
+    }
+
+    const drawPolyline = (shape) => {
+        shape.setAttributeNS(null, 'points', points);
+    }
+
+    const handleKeyPress = (event) => {
+        if (event.key === 'Enter') {
+            sendSvgToServer(polyline);
+            polyline = null;
+            points = [];
+            document.removeEventListener('keydown', handleKeyPress);
+        }
+    }
+
+    svg.addEventListener('mousedown', (event) => {
+        if (event.shiftKey)
+            return;
+
+        const start = svgPoint(svg, event.clientX, event.clientY);
+
+        switch (drawingMode) {
+            case 'rectangle':
+                shapeElement = createRectangle(start, start);
+                break;
+            case 'circle':
+                shapeElement = createCircle(start, start);
+                break;
+            case 'ellipse':
+                shapeElement = createEllipse(start, start);
+                break;
+            case 'square':
+                shapeElement = createSquare(start, start);
+                break;
+            case 'line':
+                shapeElement = createLine(start, start);
+                break;
+            case 'polyline':
+                document.addEventListener('keydown', handleKeyPress);
+                shapeElement = createPolyline(start, start);
+                break;
+        }
+
+        if (shapeElement != null)
+        svg.appendChild(shapeElement);
+
+        const draw = (e) => {
+            let end = svgPoint(svg, e.clientX, e.clientY);
+            switch (drawingMode) {
+                case 'rectangle':
+                    drawRectangle(shapeElement, start, end);
+                    break;
+                case 'circle':
+                    drawCircle(shapeElement, start, end);
+                    break;
+                case 'ellipse':
+                    drawEllipse(shapeElement, start, end);
+                    break;
+                case 'square':
+                    drawSquare(shapeElement, start, end);
+                    break;
+                case 'line':
+                    drawLine(shapeElement, start, end);
+                    break;
+                case 'polyline':
+                    drawPolyline(shapeElement, [start.x, start.y, end.x, end.y]);
+                    break;
+            }
+        }
+
+        const endDraw = (e) => {
+            svg.removeEventListener('mousemove', draw);
+            svg.removeEventListener('mouseup', endDraw);
+            if (polyline == null)
+                sendSvgToServer(shapeElement);
+        }
+
+        svg.addEventListener('mousemove', draw);
+        svg.addEventListener('mouseup', endDraw);
+    });
+
+    const moveShape = (shape, dx, dy) => {
+        let x = parseFloat(shape.getAttributeNS(null, 'cx')) + dx;
+        let y = parseFloat(shape.getAttributeNS(null, 'cy')) + dy;
+        shape.setAttributeNS(null, 'cx', x);
+        shape.setAttributeNS(null, 'cy', y);
+    }
+
+    // Обработчик события нажатия кнопки мыши на SVG-фигуру
+    const startDrag = (shape, event) => {
+        let startCoords = svgPoint(svg, event.clientX, event.clientY);
+
+        // Обработчик события перемещения мыши
+        const drag = (e) => {
+            let endCoords = svgPoint(svg, e.clientX, e.clientY);
+            let dx = endCoords.x - startCoords.x;
+            let dy = endCoords.y - startCoords.y;
+            moveShape(shape, dx, dy);
+            startCoords = endCoords; // Обновляем начальные координаты для следующего перемещения
+        }
+
+        // Обработчик события отпускания кнопки мыши
+        const endDrag = () => {
+            svg.removeEventListener('mousemove', drag);
+            svg.removeEventListener('mouseup', endDrag);
+        }
+
+        svg.addEventListener('mousemove', drag);
+        svg.addEventListener('mouseup', endDrag);
+    }
+
+    const shapes = document.querySelectorAll('rect, circle, line, polygon, polyline, ellipse');
+    shapes.forEach(shape => {
+        shape.addEventListener('mousedown', (event) => {
+            if (event.shiftKey)
+                startDrag(shape, event);
+        });
+    });
+
+    const changeDrawingMode = (mode) => {
+        drawingMode = mode;
+    }
+
+    btns = document.getElementsByClassName('btn');
+    btns = [...btns, ...document.getElementsByClassName('selected_btn')];
+
+    btns.forEach(btn => {
+        btn.addEventListener('mousedown', () => {
+            changeDrawingMode(btn.getAttribute('id'));
+            selected_btn = btns.filter(btn => btn.getAttribute('class') === 'selected_btn')[0];
+            if (selected_btn.getAttribute('id') === 'polyline')
+                document.dispatchEvent(new KeyboardEvent('keydown', {'key': 'Enter'}));
+            selected_btn.setAttribute('class', 'btn');
+            btn.setAttribute('class', 'selected_btn');
+        })
+    });
+
+    const selectBtn = (id) => {
+        if (id === undefined)
+            return;
+        selected_btn = document.getElementsByClassName('selected_btn')[0];
+        new_selected_btn = document.getElementById(id);
+
+        if (selected_btn === new_selected_btn)
+            return;
+
+        selected_btn.setAttribute('class', 'btn');
+        new_selected_btn.setAttribute('class', 'selected_btn');
+        changeDrawingMode(new_selected_btn.getAttribute('id'));
+    }
+
+    document.querySelector('#reset').addEventListener('mousedown', () => {
+        resetRequest();
+    })
+
+    function getCookie(name) {
+        let match = document.cookie
+            .split('; ')
+            .find(row => row.startsWith(`${name}=`));
+
+        return match ? match.split('=')[1] : undefined;
+    }
+
+    selectBtn(getCookie('curr_shape'));
+</script>
+</html>
